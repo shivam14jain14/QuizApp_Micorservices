@@ -85,7 +85,7 @@ flowchart TB
 
 ## Tech Stack
 
-- Java 21
+- Java 17
 - Spring Boot
 - Spring Cloud Gateway
 - Spring Cloud Netflix Eureka
@@ -119,7 +119,7 @@ Quiz_Microservices_App/
 
 ## Prerequisites
 
-- JDK 21
+- JDK 17
 - Maven
 - Node.js and npm
 - PostgreSQL
