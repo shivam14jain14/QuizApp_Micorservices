@@ -1,0 +1,4 @@
+CREATE DATABASE shivam;
+CREATE DATABASE questiondb;
+CREATE DATABASE quizdb;
+CREATE DATABASE notificationdb;
