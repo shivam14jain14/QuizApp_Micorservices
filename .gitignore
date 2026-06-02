@@ -1,0 +1,41 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# IDEs
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+
+# Java / Maven
+target/
+*.class
+
+# Node / React
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+*.tsbuildinfo
+
+# Logs
+*.log
+logs/
+
+# Environment files and local secrets
+.env
+.env.*
+application.properties
+application-local.properties
+application-secret.properties
+
+# Keep sanitized examples in Git
+!application.example.properties
+
+WIKI.html
+
+# Local-only / machine-specific (excluded by user)
+docker-compose.yml
+start-all.ps1
