@@ -1,5 +1,5 @@
 import { apiClient } from './client';
-import type { Question, QuestionWrapper, QuizCreateRequest, QuizHistorySummary, QuizSummary, SubmitQuizRequest } from '../types';
+import type { Question, QuestionWrapper, QuizCreateRequest, QuizHistorySummary, QuizResult, QuizSummary, SubmitQuizRequest } from '../types';
 
 export async function generateQuiz(payload: QuizCreateRequest) {
   const { data } = await apiClient.post<string>('/quiz/generate', payload);
@@ -17,7 +17,12 @@ export async function getQuizQuestions(quizId: number) {
 }
 
 export async function submitQuiz(payload: SubmitQuizRequest) {
-  const { data } = await apiClient.post<number>('/quiz/submit', payload);
+  const { data } = await apiClient.post<QuizResult>('/quiz/submit', payload);
+  return data;
+}
+
+export async function getQuizReview(quizId: number) {
+  const { data } = await apiClient.get<QuizResult>(`/quiz/${quizId}/review`);
   return data;
 }
 

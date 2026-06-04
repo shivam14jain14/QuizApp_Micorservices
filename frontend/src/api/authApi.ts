@@ -6,6 +6,12 @@ export type LoginRequest = {
   password: string;
 };
 
+export type SessionResponse = {
+  token: string;
+  username: string;
+  role: Role;
+};
+
 export type RegisterRequest = LoginRequest & {
   firstname: string;
   lastname: string;
@@ -17,6 +23,11 @@ export type RegisterRequest = LoginRequest & {
 
 export async function login(payload: LoginRequest) {
   const { data } = await apiClient.post<{ token: string }>('/auth/login', payload);
+  return data;
+}
+
+export async function refreshSession() {
+  const { data } = await apiClient.get<SessionResponse>('/auth/session');
   return data;
 }
 

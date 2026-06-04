@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { AuthState, Role } from '../types';
 import { authFromToken, clearToken, getStoredToken, storeToken } from '../utils/auth';
+import { refreshSession } from '../api/authApi';
 import { AuthContext, type AuthContextValue } from './authContextValue';
 
 function initialAuth(): AuthState {
@@ -11,6 +12,34 @@ function initialAuth(): AuthState {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [auth, setAuth] = useState<AuthState>(initialAuth);
+
+  useEffect(() => {
+    if (!auth.token) {
+      return;
+    }
+
+    let active = true;
+
+    refreshSession()
+      .then(({ token }) => {
+        if (!active) {
+          return;
+        }
+        storeToken(token);
+        setAuth(authFromToken(token));
+      })
+      .catch(() => {
+        if (!active) {
+          return;
+        }
+        clearToken();
+        setAuth({ token: null, username: null, role: null });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const value = useMemo<AuthContextValue>(() => ({
     ...auth,

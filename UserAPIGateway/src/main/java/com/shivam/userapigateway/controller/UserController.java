@@ -11,6 +11,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.ReactiveAuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 import java.util.List;
@@ -52,6 +53,23 @@ public class UserController {
                     return ResponseEntity.ok(Map.of("token", jwt));
                 })
                 .defaultIfEmpty(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
+    }
+
+    @GetMapping("/session")
+    public Mono<ResponseEntity<Map<String, String>>> getSession(Authentication authentication) {
+        if (authentication == null || authentication.getName() == null) {
+            return Mono.just(ResponseEntity.status(HttpStatus.UNAUTHORIZED).build());
+        }
+
+        String username = authentication.getName();
+        logger.info("Refreshing session for user: {}", username);
+        String role = service.getRole(username);
+        String jwt = jwtService.generateToken(username);
+        return Mono.just(ResponseEntity.ok(Map.of(
+                "token", jwt,
+                "username", username,
+                "role", role
+        )));
     }
 
     @GetMapping("/getRoles/{username}")
