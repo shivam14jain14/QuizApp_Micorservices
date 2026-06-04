@@ -51,10 +51,17 @@ public class quizController {
     }
     //tested
     @PostMapping("/submit")
-    public ResponseEntity<Integer> getCorrectAnswers(@RequestBody ResponseObj responseObj) {
+    public ResponseEntity<QuizResultDto> getCorrectAnswers(@RequestBody ResponseObj responseObj) {
         logger.info("Submitting quiz for scoring");
         return quizSer.getCorrectAnswers(responseObj);
     }
+    @GetMapping("/{quizId}/review")
+    public ResponseEntity<QuizResultDto> reviewAttempt(@PathVariable int quizId,
+                                                       @RequestHeader(value = "Authorization", required = false) String authorizationHeader) {
+        logger.info("Fetching attempt review for quizId: {}", quizId);
+        return quizSer.getAttemptReview(quizId, authorizationHeader);
+    }
+
     //tested
     @GetMapping("/ai-questions")
     public ResponseEntity<List<QuestionObj>> getAiGeneratedQuestions(@RequestParam String category, @RequestParam String level) {

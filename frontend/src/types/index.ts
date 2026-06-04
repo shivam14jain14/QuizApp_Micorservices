@@ -75,6 +75,20 @@ export type SubmitQuizRequest = {
   userResponses: Answer[];
 };
 
+export type AnswerResult = {
+  quesId: number;
+  question: string;
+  userResponse: string;
+  correctAnswer: string;
+  correct: boolean;
+};
+
+export type QuizResult = {
+  score: number;
+  total: number;
+  results: AnswerResult[];
+};
+
 export type QuizHistorySummary = {
   quizId: number;
   title?: string;
