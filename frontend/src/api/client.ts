@@ -5,7 +5,8 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://localho
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000
+  // AI question generation calls OpenAI and can take ~10-20s, so allow a generous timeout.
+  timeout: 60000
 });
 
 apiClient.interceptors.request.use((config) => {

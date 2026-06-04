@@ -13,7 +13,9 @@ A full-stack quiz platform built with Spring Boot microservices, React, PostgreS
 - Quiz history and score feedback
 - AI question generation using Spring AI OpenAI integration
 - Kafka event publishing from User API Gateway and Quiz Service for user, quiz-created, and quiz-submitted events
-- Notification service for user/admin notification workflows
+- Notification service for UI-level user/admin notification workflows backed by Kafka consumers
+- Admin approval flow with `UNVERIFIED` registrations and automatic session refresh after promotion
+- Quiz attempt review with per-question feedback after submission
 - React frontend built with TypeScript, Vite, Tailwind CSS, React Query, and Axios
 - Safe GitHub configuration using `.gitignore` and `application.example.properties`
 
@@ -80,7 +82,7 @@ flowchart TB
 | API Gateway | `UserAPIGateway` | `8765` | Auth, JWT, routing, users, gateway filters, Kafka user-event publishing |
 | Question Service | `MicroserviceQuestionQuizApp` | `8082` | Question CRUD and scoring helpers |
 | Quiz Service | `MicroserviceQuizService` | `8090` | Quiz generation, submission, history, AI questions, Kafka publishing |
-| Notification Service | `NotificationService` | Spring default unless configured | Notification APIs and Kafka consumption |
+| Notification Service | `NotificationService` | `8086` | Notification APIs and Kafka consumption for in-app notifications |
 | Frontend | `frontend` | `5173` | React TypeScript UI |
 
 ## Tech Stack
@@ -123,7 +125,9 @@ Quiz_Microservices_App/
 - Maven
 - Node.js and npm
 - PostgreSQL
-- Kafka running on `localhost:9092`
+- Kafka running on `localhost:9092` - cd C:\kafka
+.\bin\windows\kafka-server-start.bat .\config\server.properties
+
 
 Create the required PostgreSQL databases:
 
@@ -259,6 +263,7 @@ http://localhost:8765
 | --- | --- | --- |
 | `POST` | `/auth/register` | Register a user |
 | `POST` | `/auth/login` | Login and receive JWT |
+| `GET` | `/auth/session` | Refresh the current authenticated session token with the latest role |
 | `GET` | `/auth/getRoles/{username}` | Get user role |
 | `GET` | `/auth/getBatch/{username}` | Get user batch |
 | `POST` | `/auth/updateRole` | Update user role |
@@ -288,7 +293,9 @@ Authorization: Bearer <token>
 | `POST` | `/quiz/generate` | Generate a quiz |
 | `GET` | `/quiz/questions/{category}` | Get questions for quiz creation |
 | `GET` | `/quiz/{quizId}` | Get quiz by ID |
+| `GET` | `/quiz/{quizId}/review` | Get the caller's submitted attempt review with per-question correctness |
 | `GET` | `/quiz/batch/{batch}` | Get quizzes by batch |
+| `GET` | `/quiz/history` | Get quiz history for the current user or filtered batch/user |
 | `POST` | `/quiz/submit` | Submit answers and calculate score |
 | `GET` | `/quiz/ai-questions?category={category}&level={level}` | Generate AI questions |
 | `POST` | `/quiz/finalize` | Finalize quiz with selected questions |
@@ -304,6 +311,8 @@ Authorization: Bearer <token>
 | `GET` | `/notifications/failed` | Get failed notifications for admin |
 | `GET` | `/notifications/recipient/{recipientIdentifier}` | Get recipient notifications as admin |
 
+Kafka notifications are currently stored and surfaced in the UI inbox. The project does not send email notifications yet.
+
 ## Kafka Topics
 
 | Topic | Purpose |
@@ -311,6 +320,8 @@ Authorization: Bearer <token>
 | `user-created-notifications` | User registration notifications |
 | `quiz-created-notifications` | Quiz creation notifications |
 | `quiz-submitted-notifications` | Quiz submission notifications |
+
+The gateway and quiz services publish through the transactional outbox pattern, and `NotificationService` consumes the topics to persist notification rows for the frontend.
 
 ## Build
 

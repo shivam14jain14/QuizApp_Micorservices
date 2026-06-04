@@ -17,6 +17,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -121,23 +122,60 @@ public class quizService {
     }
 
     @Transactional
-    public ResponseEntity<Integer> getCorrectAnswers(ResponseObj responseObj) {
-        ResponseEntity<Integer> score = quizInterface.getScores(responseObj.getUserResponses());
-        Integer actualScore = score.getBody();
-//        List<QuizHistory> history = new ArrayList<>();
-        List<answerHistory> answerObj=new ArrayList<>();
-        for(userQuizObj response : responseObj.getUserResponses()) {
-            QuestionObj ques= quizInterface.getQuestionById(response.getQuesId()).getBody();
-            assert ques != null;
-            answerHistory h=new answerHistory(ques.getQuestion(),response.getResponse(),ques.getAnswer());
-            answerObj.add(h);
+    public ResponseEntity<QuizResultDto> getCorrectAnswers(ResponseObj responseObj) {
+        // One attempt per student per quiz: reject a re-submission with a clear 409 instead of
+        // letting it hit the (quizId, username) unique constraint and blow up as a 500.
+        if (quizHistoryRepo.findByQuizIdAndUsername(responseObj.getQuizId(), responseObj.getUsername()).isPresent()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "You have already attempted this quiz.");
         }
-        QuizHistory quizHistory = new QuizHistory(responseObj.getQuizId(),responseObj.getUsername(),actualScore,answerObj);
+        List<answerHistory> answerObj = new ArrayList<>();
+        List<AnswerResultDto> results = new ArrayList<>();
+        int correctCount = 0;
+        for (userQuizObj response : responseObj.getUserResponses()) {
+            QuestionObj ques = quizInterface.getQuestionById(response.getQuesId()).getBody();
+            assert ques != null;
+            answerHistory h = new answerHistory(ques.getQuestion(), response.getResponse(), ques.getAnswer());
+            answerObj.add(h);
+            boolean correct = ques.getAnswer() != null && ques.getAnswer().equals(response.getResponse());
+            if (correct) {
+                correctCount++;
+            }
+            results.add(new AnswerResultDto(response.getQuesId(), ques.getQuestion(),
+                    response.getResponse(), ques.getAnswer(), correct));
+        }
+        QuizHistory quizHistory = new QuizHistory(responseObj.getQuizId(), responseObj.getUsername(), correctCount, answerObj);
         quizHistoryRepo.save(quizHistory);
-        createQuizSubmittedOutboxEvent(responseObj, actualScore);
-        return score;
+        createQuizSubmittedOutboxEvent(responseObj, correctCount);
+        return ResponseEntity.ok(new QuizResultDto(correctCount, responseObj.getUserResponses().size(), results));
     }
 
+    /**
+     * Rebuilds the per-question breakdown of the caller's stored attempt so a student can
+     * review which answers were right/wrong even after the quiz is locked.
+     */
+    @Transactional(readOnly = true)
+    public ResponseEntity<QuizResultDto> getAttemptReview(int quizId, String authorizationHeader) {
+        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+            return new ResponseEntity<>(HttpStatus.UNAUTHORIZED);
+        }
+        String token = authorizationHeader.substring(7);
+        if (!jwtService.isTokenValid(token)) {
+            return new ResponseEntity<>(HttpStatus.UNAUTHORIZED);
+        }
+        String username = jwtService.extractUsername(token);
+        QuizHistory history = quizHistoryRepo.findByQuizIdAndUsername(quizId, username).orElse(null);
+        if (history == null) {
+            return new ResponseEntity<>(HttpStatus.NOT_FOUND);
+        }
+        List<answerHistory> answers = history.getAnswerObj() == null ? Collections.emptyList() : history.getAnswerObj();
+        List<AnswerResultDto> results = new ArrayList<>();
+        for (answerHistory a : answers) {
+            // answerHistory.answer holds the user's response; correctAnswer holds the right one.
+            boolean correct = a.getCorrectAnswer() != null && a.getCorrectAnswer().equals(a.getAnswer());
+            results.add(new AnswerResultDto(0, a.getQuestion(), a.getAnswer(), a.getCorrectAnswer(), correct));
+        }
+        return ResponseEntity.ok(new QuizResultDto(history.getScore(), results.size(), results));
+    }
 
     public ResponseEntity<List<QuestionWrapper>> getQuizQuestionsfromDB(String category) {
         List<Integer> questionIds= quizInterface.getQuestionsForQuiz(category).getBody();
@@ -201,11 +239,28 @@ public class quizService {
         }
 
         String selectedBatch = targetBatch;
-        List<quizObj> quizzes = selectedBatch == null
+        List<quizObj> quizzes = new ArrayList<>(selectedBatch == null
                 ? quizRepo.findAll()
                 : quizRepo.findAll().stream()
                 .filter(quiz -> quiz.getBatchIds() != null && quiz.getBatchIds().stream().anyMatch(quizBatch -> batchMatches(quizBatch, selectedBatch)))
-                .toList();
+                .toList());
+
+        // A student must always see quizzes they actually attempted, even if the quiz is not
+        // (or no longer) in their current batch. Otherwise submitted attempts vanish from history.
+        if (isStudent && targetUsername != null) {
+            Set<Integer> presentIds = new HashSet<>();
+            for (quizObj q : quizzes) {
+                presentIds.add(q.getId());
+            }
+            for (QuizHistory attempt : quizHistoryRepo.findByUsernameIgnoreCase(targetUsername)) {
+                if (!presentIds.contains(attempt.getQuizId())) {
+                    quizRepo.findById(attempt.getQuizId()).ifPresent(q -> {
+                        quizzes.add(q);
+                        presentIds.add(q.getId());
+                    });
+                }
+            }
+        }
 
         List<String> targetUsernames = new ArrayList<>();
         if (targetUsername != null) {
@@ -248,18 +303,17 @@ public class quizService {
     Ensure the answer matches one of the options.
     Use category as "%s" and difficulty level as "%s and give me pure json string not explainatory text and dont include any other things accept array not even ```json".
     """, category, level);
-       String response = chatModel.call(prompt);
-        System.out.println(response+"response");
         try {
+            String response = chatModel.call(prompt);
             ObjectMapper objectMapper = new ObjectMapper();
             List<QuestionObj> questions = objectMapper.readValue(response, new TypeReference<List<QuestionObj>>() {});
-            // use questions
-            System.out.println(questions+"questions");
-            return new ResponseEntity<List<QuestionObj>>(questions,HttpStatus.OK);
-        } catch (JsonProcessingException e) {
-            e.printStackTrace();
-            return new ResponseEntity<List<QuestionObj>>(new ArrayList<>(),HttpStatus.OK);
-            // handle error
+            return new ResponseEntity<>(questions, HttpStatus.OK);
+        } catch (Exception e) {
+            // Covers OpenAI failures (invalid/missing API key, quota, timeout) AND malformed JSON.
+            // Degrade gracefully so the endpoint never returns a 500.
+            logger.error("AI question generation failed for category={}, level={}. " +
+                    "Check spring.ai.openai.api-key and OpenAI quota. Cause: {}", category, level, e.getMessage());
+            return new ResponseEntity<>(new ArrayList<>(), HttpStatus.OK);
         }
 
     }
