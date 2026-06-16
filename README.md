@@ -1,49 +1,71 @@
-# Quiz Microservices App
+# 🧠 AI-Powered Quiz Platform
 
-A full-stack quiz platform built with Spring Boot microservices, React, PostgreSQL, Eureka Service Registry, Spring Cloud Gateway, OpenFeign, Kafka, JWT authentication, and Spring AI. The application supports user authentication, question management, quiz creation, quiz submission, score history, notifications, role-based access, and AI-assisted question generation.
+> A **production-grade microservices quiz platform** with OpenAI-driven question generation, event-driven
+> scoring and notifications via Kafka, and role-based access across 5 independent services.
 
-## Features
+<p align="left">
+  <img alt="Java" src="https://img.shields.io/badge/Java-17-orange" />
+  <img alt="Spring Boot" src="https://img.shields.io/badge/Spring%20Boot-3.x-brightgreen" />
+  <img alt="Spring Cloud" src="https://img.shields.io/badge/Spring%20Cloud-Gateway%20%7C%20Eureka%20%7C%20Feign-blueviolet" />
+  <img alt="Kafka" src="https://img.shields.io/badge/Messaging-Apache%20Kafka-black" />
+  <img alt="PostgreSQL" src="https://img.shields.io/badge/Database-PostgreSQL-blue" />
+  <img alt="Spring AI" src="https://img.shields.io/badge/AI-Spring%20AI%20%7C%20OpenAI-ff69b4" />
+  <img alt="React" src="https://img.shields.io/badge/React-18%20%2B%20TS-61dafb" />
+</p>
 
-- User registration and login with JWT authentication
-- Role-based frontend routing and protected pages
-- API Gateway for centralized routing and access control
-- Eureka-based service registration and discovery
-- Question management APIs
-- Quiz creation, quiz assignment, quiz submission, and scoring
-- Quiz history and score feedback
-- AI question generation using Spring AI OpenAI integration
-- Kafka event publishing from User API Gateway and Quiz Service for user, quiz-created, and quiz-submitted events
-- Notification service for UI-level user/admin notification workflows backed by Kafka consumers
-- Admin approval flow with `UNVERIFIED` registrations and automatic session refresh after promotion
-- Quiz attempt review with per-question feedback after submission
-- React frontend built with TypeScript, Vite, Tailwind CSS, React Query, and Axios
-- Safe GitHub configuration using `.gitignore` and `application.example.properties`
+---
 
-## Architecture
+## ✨ Overview
+
+Most quiz platforms generate static questions from a fixed bank. This platform generates questions
+**dynamically using OpenAI** based on category and difficulty level — with graceful fallback to DB-stored
+questions if the AI call fails. Scoring and notifications are fully **decoupled via Kafka**, ensuring
+quiz submission never blocks on notification delivery.
+
+Two roles drive the platform:
+- **Teacher (Admin)** — creates quizzes, assigns them to student batches, manages the question bank,
+  approves new student registrations, and monitors sent/failed notifications
+- **Student (User)** — takes assigned quizzes, views per-question feedback after submission,
+  tracks score history, and receives in-app notifications
+
+```
+Teacher creates quiz → assigns to student batch
+        │
+        ▼  Student submits answers
+        ▼  Quiz Service scores via OpenFeign → Question Service
+        ▼  Publishes quiz-submitted event to Kafka (transactional outbox)
+        ▼
+Notification Service consumes event → persists notification → surfaces in student UI inbox
+Score returned to student immediately — notification delivery is fully async
+```
+
+---
+
+## 🏛️ Architecture
 
 ```mermaid
 flowchart TB
     Client["React Frontend / Postman<br/>localhost:5173"]
 
     subgraph GatewayLayer["Gateway Layer"]
-        Gateway["UserAPIGateway<br/>Port 8765<br/>Auth, JWT, Routing, User Events"]
+        Gateway["UserAPIGateway<br/>Port 8765<br/>Auth · JWT · Routing · User Events"]
     end
 
     subgraph Services["Microservices"]
-        QuestionService["Question Service<br/>MicroserviceQuestionQuizApp<br/>Port 8082"]
-        QuizService["Quiz Service<br/>MicroserviceQuizService<br/>Port 8090<br/>Quiz, Scores, AI Questions"]
-        NotificationService["Notification Service<br/>Notification APIs"]
+        QuestionService["Question Service<br/>Port 8082<br/>Question CRUD · Scoring helpers"]
+        QuizService["Quiz Service<br/>Port 8090<br/>Quiz · Scores · AI Questions · Kafka"]
+        NotificationService["Notification Service<br/>Port 8086<br/>In-app notifications · Kafka consumer"]
     end
 
-    subgraph DataStores["PostgreSQL Databases"]
-        UserDB[("User DB<br/>shivam")]
-        QuestionDB[("Question DB<br/>questiondb")]
-        QuizDB[("Quiz DB<br/>quizdb")]
-        NotificationDB[("Notification DB<br/>notificationdb")]
+    subgraph DataStores["Per-Service PostgreSQL Databases"]
+        UserDB[("User DB")]
+        QuestionDB[("Question DB")]
+        QuizDB[("Quiz DB")]
+        NotificationDB[("Notification DB")]
     end
 
     subgraph Messaging["Event Streaming"]
-        Kafka[("Kafka<br/>localhost:9092")]
+        Kafka[("Apache Kafka<br/>localhost:9092")]
     end
 
     subgraph Discovery["Service Discovery"]
@@ -65,71 +87,190 @@ flowchart TB
     NotificationService -->|OpenFeign| Gateway
 
     Gateway -->|"publishes user-created"| Kafka
-    QuizService -->|"publishes quiz-created and quiz-submitted"| Kafka
+    QuizService -->|"publishes quiz-created · quiz-submitted"| Kafka
     Kafka -->|"consumes events"| NotificationService
 
-    Gateway -.-> Eureka
+    Gateway -.->|"service registration"| Eureka
     QuestionService -.-> Eureka
     QuizService -.-> Eureka
     NotificationService -.-> Eureka
 ```
 
-## Services
+### How a quiz submission is processed
 
-| Service | Directory | Port | Purpose |
-| --- | --- | --- | --- |
-| Eureka Server | `EurekaServer-Service-Registry` | `8761` | Service registry |
-| API Gateway | `UserAPIGateway` | `8765` | Auth, JWT, routing, users, gateway filters, Kafka user-event publishing |
-| Question Service | `MicroserviceQuestionQuizApp` | `8082` | Question CRUD and scoring helpers |
-| Quiz Service | `MicroserviceQuizService` | `8090` | Quiz generation, submission, history, AI questions, Kafka publishing |
-| Notification Service | `NotificationService` | `8086` | Notification APIs and Kafka consumption for in-app notifications |
-| Frontend | `frontend` | `5173` | React TypeScript UI |
+```mermaid
+sequenceDiagram
+    participant U as User
+    participant GW as API Gateway
+    participant QZ as Quiz Service
+    participant QS as Question Service
+    participant K as Kafka
+    participant NS as Notification Service
 
-## Tech Stack
-
-- Java 17
-- Spring Boot
-- Spring Cloud Gateway
-- Spring Cloud Netflix Eureka
-- Spring Cloud OpenFeign
-- Spring Data JPA
-- PostgreSQL
-- Apache Kafka
-- JWT
-- Spring AI OpenAI
-- React 18
-- TypeScript
-- Vite
-- Tailwind CSS
-- React Query
-- Axios
-- Vitest
-
-## Project Structure
-
-```text
-Quiz_Microservices_App/
-├── EurekaServer-Service-Registry/
-├── UserAPIGateway/
-├── MicroserviceQuestionQuizApp/
-├── MicroserviceQuizService/
-├── NotificationService/
-├── frontend/
-├── README.md
-└── .gitignore
+    U->>GW: POST /quiz/submit (JWT + answers)
+    GW->>QZ: route request (JWT validated)
+    QZ->>QS: OpenFeign: POST /question/getScores
+    QS-->>QZ: scores per question
+    QZ->>QZ: calculate total score + store result
+    QZ->>K: publish quiz-submitted event (transactional outbox)
+    QZ-->>U: score + per-question feedback (immediate)
+    K-->>NS: consume quiz-submitted event
+    NS->>NS: persist notification row
+    NS-->>U: notification appears in UI inbox (async)
 ```
 
-## Prerequisites
+---
 
-- JDK 17
-- Maven
-- Node.js and npm
-- PostgreSQL
-- Kafka running on `localhost:9092` - cd C:\kafka
-.\bin\windows\kafka-server-start.bat .\config\server.properties
+## 🚀 Features
 
+**AI & Question Generation**
+- 🤖 **OpenAI-driven question generation** — dynamic questions by category and difficulty level
+- 🔄 **Graceful fallback** — if OpenAI call fails, falls back to DB-stored questions silently
+- 📊 **Difficulty-based generation** — easy, medium, hard question sets per category
+- 🔍 **Per-question review** — after submission, users see correct/incorrect per question with feedback
 
-Create the required PostgreSQL databases:
+**Event-Driven Architecture**
+- 📨 **Kafka transactional outbox** — at-least-once delivery guarantee for all events
+- 🔁 **Idempotent consumers** — re-attempt-safe quiz submission and notification processing
+- 📬 **Async notifications** — scoring never blocks on notification delivery
+- 📋 **3 Kafka topics** — user-created, quiz-created, quiz-submitted events
+
+**Platform & Security**
+- 🔐 **JWT auth** — access + refresh tokens with server-side session refresh on role promotion
+- 👥 **Role-based access** — Teacher (Admin) / Student (User) with protected frontend routing per role
+- 🧭 **Admin approval flow** — students land in UNVERIFIED state; teacher activates them
+- 🌐 **API Gateway** — centralized routing, JWT validation, gateway filters
+- 🔍 **Eureka service discovery** — all services register and resolve via Eureka
+- 🔗 **OpenFeign inter-service calls** — typed HTTP clients between Quiz and Question services
+
+**Quiz Lifecycle**
+- ✏️ **Teacher** — creates quizzes, assigns to student batches, manages question bank
+- 📝 **Student** — takes assigned quizzes, views per-question feedback after submission
+- 📈 Score history and quiz history per student and batch
+- 🔔 In-app notification inbox with read/unread state for both roles
+- 🗂️ Question bank management with category filtering and pagination
+
+---
+
+## 🧰 Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Backend | Java 17, Spring Boot, Spring Security |
+| API Gateway | Spring Cloud Gateway, JWT filter, gateway filters |
+| Service Discovery | Spring Cloud Netflix Eureka |
+| Inter-service calls | Spring Cloud OpenFeign |
+| Messaging | Apache Kafka (transactional outbox pattern) |
+| AI / LLM | Spring AI, OpenAI GPT (question generation) |
+| Database | PostgreSQL (per-service isolation — 4 databases) |
+| ORM | Spring Data JPA |
+| Frontend | React 18, TypeScript, Vite, TailwindCSS, React Query, Axios |
+| Testing | JUnit 5, Vitest |
+
+---
+
+## 🧱 Design Highlights
+
+- **Kafka transactional outbox** — quiz submission publishes events atomically with the DB write,
+  guaranteeing at-least-once delivery to the Notification Service with no message loss on failure
+
+- **Graceful AI fallback** — if OpenAI question generation fails for any reason, the platform
+  silently falls back to DB-stored questions, ensuring quiz availability is never blocked by AI availability
+
+- **Per-service database isolation** — each microservice owns its own PostgreSQL database with zero
+  cross-service DB access; all inter-service data needs go through OpenFeign HTTP calls
+
+- **Idempotent quiz submission** — re-attempt-safe submission prevents double-scoring on retries or
+  network failures
+
+- **Admin approval flow** — new users land in UNVERIFIED state; on admin promotion, the frontend
+  automatically refreshes the session token to reflect the new role without requiring re-login
+
+- **Centralized auth at gateway** — JWT validation happens once at the API Gateway layer; downstream
+  services trust the gateway and focus purely on business logic
+
+---
+
+## 📋 Services
+
+| Service | Directory | Port | Purpose |
+|---|---|---|---|
+| Eureka Server | `EurekaServer-Service-Registry` | `8761` | Service registry and dashboard |
+| API Gateway | `UserAPIGateway` | `8765` | Auth, JWT, routing, user management, Kafka publishing |
+| Question Service | `MicroserviceQuestionQuizApp` | `8082` | Question CRUD, scoring helpers |
+| Quiz Service | `MicroserviceQuizService` | `8090` | Quiz lifecycle, AI generation, Kafka publishing |
+| Notification Service | `NotificationService` | `8086` | In-app notifications, Kafka consumer |
+| Frontend | `frontend` | `5173` | React TypeScript SPA |
+
+---
+
+## 📡 API Reference
+
+### Authentication
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/auth/register` | Register — lands in UNVERIFIED state |
+| `POST` | `/auth/login` | Login → access + refresh JWT |
+| `GET` | `/auth/session` | Refresh session token with latest role |
+| `GET` | `/auth/getRoles/{username}` | Get user role |
+| `POST` | `/auth/updateRole` | Promote/demote user role (admin) |
+
+Use protected endpoints with:
+```
+Authorization: Bearer <token>
+```
+
+### Questions
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/question/all` | Paginated question list |
+| `GET` | `/question/category/{category}` | Questions by category |
+| `POST` | `/question/add` | Add a question |
+| `GET` | `/question/generate?category={category}` | Generate random question IDs |
+| `POST` | `/question/getQuestions` | Get question wrappers by IDs |
+| `POST` | `/question/getScores` | Score submitted answers |
+
+### Quizzes
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `POST` | `/quiz/generate` | Generate a quiz |
+| `GET` | `/quiz/{quizId}` | Get quiz by ID |
+| `GET` | `/quiz/{quizId}/review` | Per-question feedback after submission |
+| `GET` | `/quiz/history` | Quiz history for current user or batch |
+| `POST` | `/quiz/submit` | Submit answers → score + Kafka event |
+| `GET` | `/quiz/ai-questions?category={c}&level={l}` | Generate AI questions |
+| `POST` | `/quiz/finalize` | Finalize quiz with selected questions |
+
+### Notifications
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/notifications` | Get current user's notifications |
+| `GET` | `/notifications/read/{id}` | Mark as read |
+| `GET` | `/notifications/unread/{id}` | Mark as unread |
+| `GET` | `/notifications/sent` | Sent notifications (admin) |
+| `GET` | `/notifications/failed` | Failed notifications (admin) |
+
+---
+
+## 📨 Kafka Topics
+
+| Topic | Publisher | Consumer | Purpose |
+|---|---|---|---|
+| `user-created-notifications` | API Gateway | Notification Service | New user registration |
+| `quiz-created-notifications` | Quiz Service | Notification Service | Quiz creation |
+| `quiz-submitted-notifications` | Quiz Service | Notification Service | Quiz submission + score |
+
+---
+
+## ⚡ Quick Start (Local)
+
+**Prerequisites:** Java 17 · Maven · PostgreSQL · Node.js 20 · Kafka · OpenAI API key
+
+### 1. Databases
 
 ```sql
 CREATE DATABASE shivam;
@@ -138,233 +279,102 @@ CREATE DATABASE quizdb;
 CREATE DATABASE notificationdb;
 ```
 
-## Configuration
+### 2. Kafka
 
-Real `application.properties` files are ignored by Git because they can contain local database credentials, JWT secrets, and API keys.
+Start Zookeeper and Kafka broker on `localhost:9092`. Topics are auto-created on first publish.
 
-Each backend service includes a safe template:
+### 3. Configuration
 
-```text
-src/main/resources/application.example.properties
-```
-
-For local development, copy each example file to `application.properties` inside the same service:
+Each service has a safe template at `src/main/resources/application.example.properties`. Copy and fill in:
 
 ```bash
 cp src/main/resources/application.example.properties src/main/resources/application.properties
 ```
 
-Then update placeholders such as:
+Key variables:
 
-```properties
-spring.datasource.username=YOUR_DB_USERNAME
-spring.datasource.password=YOUR_DB_PASSWORD
-jwt.secret=YOUR_BASE64_ENCODED_JWT_SECRET
-spring.ai.openai.api-key=YOUR_OPENAI_API_KEY
-```
+| Variable | Purpose |
+|---|---|
+| `spring.datasource.username` / `password` | PostgreSQL credentials |
+| `jwt.secret` | JWT signing key (≥ 32 chars, Base64) |
+| `spring.ai.openai.api-key` | OpenAI API key |
+| `spring.kafka.bootstrap-servers` | Kafka broker address |
 
-Do not commit real secrets or API keys.
-
-## Backend Startup
-
-Start services in this order:
-
-1. Eureka Server
-2. User API Gateway
-3. Question Service
-4. Quiz Service
-5. Notification Service
-
-Run each service from its own directory:
+### 4. Start services in order
 
 ```bash
-cd EurekaServer-Service-Registry
-mvn spring-boot:run
+# 1. Service registry
+cd EurekaServer-Service-Registry && mvn spring-boot:run
+
+# 2. API Gateway
+cd UserAPIGateway && mvn spring-boot:run
+
+# 3. Question Service
+cd MicroserviceQuestionQuizApp && mvn spring-boot:run
+
+# 4. Quiz Service
+cd MicroserviceQuizService && mvn spring-boot:run
+
+# 5. Notification Service
+cd NotificationService && mvn spring-boot:run
 ```
 
-```bash
-cd UserAPIGateway
-mvn spring-boot:run
-```
-
-```bash
-cd MicroserviceQuestionQuizApp
-mvn spring-boot:run
-```
-
-```bash
-cd MicroserviceQuizService
-mvn spring-boot:run
-```
-
-```bash
-cd NotificationService
-mvn spring-boot:run
-```
-
-Eureka dashboard:
-
-```text
-http://localhost:8761
-```
-
-API Gateway:
-
-```text
-http://localhost:8765
-```
-
-## Frontend Setup
-
-Run the React app from the `frontend` directory:
+### 5. Frontend
 
 ```bash
 cd frontend
-npm install
-npm run dev
+npm install && npm run dev     # → http://localhost:5173
 ```
 
-Frontend URL:
+**Useful URLs**
+- Frontend: `http://localhost:5173`
+- API Gateway: `http://localhost:8765`
+- Eureka dashboard: `http://localhost:8761`
 
-```text
-http://localhost:5173
+---
+
+## 🔒 Security
+
+- BCrypt password hashing; teacher-gated student activation (UNVERIFIED → USER)
+- Stateless JWT — access + refresh tokens with automatic session refresh on role promotion
+- RBAC (Teacher/Admin · Student/User) enforced at gateway filter and service level
+- All secrets via environment variables / `application.properties` — **never committed** (see `.gitignore`)
+- `application.example.properties` committed as safe template — real configs gitignored
+
+> If any API key or secret was committed earlier, revoke and regenerate it — removing it from the
+> latest commit does not erase it from Git history.
+
+---
+
+## 📂 Repository Structure
+
+```
+Quiz_Microservices_App/
+├── EurekaServer-Service-Registry/   Spring Cloud Eureka server
+├── UserAPIGateway/                  API Gateway + auth + user management
+├── MicroserviceQuestionQuizApp/     Question Service
+├── MicroserviceQuizService/         Quiz Service + AI + Kafka publishing
+├── NotificationService/             Notification Service + Kafka consumer
+├── frontend/                        React 18 + TypeScript SPA
+├── docker-compose.yml
+└── README.md
 ```
 
-Frontend scripts:
+---
 
-```bash
-npm run dev
-npm run build
-npm run lint
-npm run test
-npm run preview
-```
+## 🗺️ Future Improvements
 
-## Gateway Routes
+- [ ] **Docker Compose** — single command to spin up all 5 services + Kafka + PostgreSQL
+- [ ] **Email notifications** — extend Notification Service with SMTP/SendGrid delivery
+- [ ] **Leaderboard** — real-time score ranking via WebSocket or SSE
+- [ ] **Quiz scheduling** — assign quizzes to batches with a deadline and auto-close
+- [ ] **Analytics dashboard** — per-category accuracy, avg scores, difficulty calibration
+- [ ] **Kubernetes deployment** — Helm chart replacing Eureka with K8s native service discovery
 
-| Gateway Path | Target |
-| --- | --- |
-| `/auth/**` | User and authentication APIs |
-| `/question/**` | Question Service |
-| `/quiz/**` | Quiz Service |
-| `/notifications/**` | Notification Service |
+---
 
-Client requests should go through the API Gateway at:
+## 👤 Author
 
-```text
-http://localhost:8765
-```
+**Shivam Jain** — Senior Backend Software Engineer
 
-## Main APIs
-
-### Authentication
-
-| Method | Endpoint | Description |
-| --- | --- | --- |
-| `POST` | `/auth/register` | Register a user |
-| `POST` | `/auth/login` | Login and receive JWT |
-| `GET` | `/auth/session` | Refresh the current authenticated session token with the latest role |
-| `GET` | `/auth/getRoles/{username}` | Get user role |
-| `GET` | `/auth/getBatch/{username}` | Get user batch |
-| `POST` | `/auth/updateRole` | Update user role |
-
-Use protected endpoints with:
-
-```text
-Authorization: Bearer <token>
-```
-
-### Questions
-
-| Method | Endpoint | Description |
-| --- | --- | --- |
-| `GET` | `/question/all` | Get paginated questions |
-| `GET` | `/question/category/{category}` | Get questions by category |
-| `POST` | `/question/add` | Add a question |
-| `GET` | `/question/generate?category={category}` | Generate random question IDs |
-| `POST` | `/question/getQuestions` | Get question wrappers by IDs |
-| `POST` | `/question/getScores` | Score submitted answers |
-| `POST` | `/question/addQues` | Add a question and return ID |
-
-### Quizzes
-
-| Method | Endpoint | Description |
-| --- | --- | --- |
-| `POST` | `/quiz/generate` | Generate a quiz |
-| `GET` | `/quiz/questions/{category}` | Get questions for quiz creation |
-| `GET` | `/quiz/{quizId}` | Get quiz by ID |
-| `GET` | `/quiz/{quizId}/review` | Get the caller's submitted attempt review with per-question correctness |
-| `GET` | `/quiz/batch/{batch}` | Get quizzes by batch |
-| `GET` | `/quiz/history` | Get quiz history for the current user or filtered batch/user |
-| `POST` | `/quiz/submit` | Submit answers and calculate score |
-| `GET` | `/quiz/ai-questions?category={category}&level={level}` | Generate AI questions |
-| `POST` | `/quiz/finalize` | Finalize quiz with selected questions |
-
-### Notifications
-
-| Method | Endpoint | Description |
-| --- | --- | --- |
-| `GET` | `/notifications` | Get current user's notifications |
-| `GET` | `/notifications/read/{id}` | Mark notification as read |
-| `GET` | `/notifications/unread/{id}` | Mark notification as unread |
-| `GET` | `/notifications/sent` | Get sent notifications for admin |
-| `GET` | `/notifications/failed` | Get failed notifications for admin |
-| `GET` | `/notifications/recipient/{recipientIdentifier}` | Get recipient notifications as admin |
-
-Kafka notifications are currently stored and surfaced in the UI inbox. The project does not send email notifications yet.
-
-## Kafka Topics
-
-| Topic | Purpose |
-| --- | --- |
-| `user-created-notifications` | User registration notifications |
-| `quiz-created-notifications` | Quiz creation notifications |
-| `quiz-submitted-notifications` | Quiz submission notifications |
-
-The gateway and quiz services publish through the transactional outbox pattern, and `NotificationService` consumes the topics to persist notification rows for the frontend.
-
-## Build
-
-Build a backend service:
-
-```bash
-mvn clean install
-```
-
-Build the frontend:
-
-```bash
-cd frontend
-npm run build
-```
-
-## GitHub Notes
-
-The repository includes a root `.gitignore` that excludes generated files, dependencies, IDE settings, OS files, logs, environment files, and real `application.properties` files.
-
-Files that should not be pushed:
-
-```text
-node_modules/
-target/
-.idea/
-.DS_Store
-.env
-application.properties
-```
-
-Files that should be pushed:
-
-```text
-application.example.properties
-package.json
-package-lock.json
-pom.xml
-src/
-frontend/src/
-README.md
-```
-
-## Important Security Note
-
-If any API key or secret was committed earlier, revoke and regenerate it before pushing to GitHub. Removing it from the latest commit does not automatically remove it from old Git history.
+*Built as a deep dive into microservices architecture, event-driven systems, and AI integration at scale.*
